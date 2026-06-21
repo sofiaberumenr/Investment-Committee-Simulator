@@ -10,15 +10,24 @@ def main() -> None:
         sectors={"TECH_ETF": "Technology", "BOND_ETF": "Fixed Income", "ENERGY_ETF": "Energy", "HEALTH_ETF": "Healthcare", "CASH": "Cash"},
     )
     audit = Path("runs/latest-audit.jsonl")
-    def chair_approval(proposal_hash: str) -> HumanApproval:
+
+    def chair_approval(proposal_hash: str, input_snapshot_hash: str) -> HumanApproval:
         return HumanApproval(
             approver="committee-chair@example.com",
             proposal_hash=proposal_hash,
+            input_snapshot_hash=input_snapshot_hash,
             approved=True,
             rationale="Controls cleared; rebalance is within the approved risk budget.",
         )
 
-    result = CommitteeSupervisor(audit).run(initial, Mandate(), chair_approval)
+    try:
+        supervisor = CommitteeSupervisor(audit)
+    except ValueError as exc:
+        audit = Path("runs/latest-audit-hash-chained.jsonl")
+        print(f"Existing audit log is not chain-valid ({exc}); writing demo audit to {audit}")
+        supervisor = CommitteeSupervisor(audit)
+
+    result = supervisor.run(initial, Mandate(), chair_approval)
     print(f"Status: {result.status}")
     print(f"Initial: {result.initial.weights}")
     print(f"Unsafe proposal: {result.proposed.weights}")
