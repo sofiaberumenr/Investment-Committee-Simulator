@@ -1,6 +1,6 @@
 # Portfolio Committee MAS
 
-A small, auditable multi-agent system that simulates a risk-constrained investment committee. It is intentionally not an autonomous trading system: specialist agents recommend and challenge, deterministic controls validate, and a human remains accountable for material decisions.
+A small, auditable multi-agent system that simulates a risk-constrained investment committee. It is not an autonomous trading system: specialist agents recommend and challenge, deterministic controls validate, and a human remains accountable for material decisions.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ python3 -m portfolio_mas.demo
 python3 -m unittest discover -s tests
 ```
 
-The demo starts with a balanced portfolio, encounters an inflation shock, proposes an energy tilt containing a restricted security, records a compliance veto, revises the proposal, re-runs risk and compliance, obtains approval bound to the revised proposal hash, and appends the complete interaction to `runs/latest-audit.jsonl`.
+The demo starts with a balanced portfolio, encounters an inflation shock, proposes an energy tilt containing a restricted security, records a compliance veto, revises the proposal, re-runs risk and compliance, obtains approval bound to the revised proposal and input snapshot hashes, and appends the complete interaction to a hash-chained audit log.
 
 ## System brief
 
@@ -92,7 +92,7 @@ Agents publish typed `Message` objects rather than unconstrained chat:
 }
 ```
 
-Allowed types are `observation`, `recommendation`, `challenge`, `veto`, `escalation`, `approval`, and `decision`. The blackboard rejects unknown identities, unauthorized sender/type combinations, missing correlation IDs, empty recipients, invalid timestamps, duplicate message IDs, and malformed payloads. Valid messages are copied only to their declared recipient inboxes. Critical vetoes route to PM and supervisor; unresolved controls or missing, stale, replayed, rejected, or hash-mismatched approval blocks the run. A production schema should additionally be versioned, authenticated, size-limited, and idempotent across processes.
+Allowed types are `observation`, `recommendation`, `challenge`, `veto`, `escalation`, `approval`, and `decision`. The blackboard rejects unknown identities, unauthorized sender/type combinations, missing correlation IDs, empty recipients, invalid timestamps, duplicate message IDs, and malformed payloads with per-sender/type payload checks for recommendations, risk, compliance, approvals, escalations, and decisions. Valid messages are copied only to their declared recipient inboxes. Critical vetoes route to PM and supervisor; unresolved controls or missing, stale, replayed, rejected, proposal-hash-mismatched, or input-snapshot-mismatched approval blocks the run. A production schema should additionally be versioned, authenticated, size-limited, and idempotent across processes.
 
 ## Incentives
 
@@ -123,10 +123,10 @@ Controls include typed messages, immutable correlation-scoped logs, deterministi
 
 ## Safety, governance, and rollback
 
-- **Human in the loop:** material turnover requires an identified, timestamped response bound to the SHA-256 hash of the exact controlled proposal. Approval expires after 15 minutes and cannot be replayed within a supervisor session. Lack of valid approval is rejection, not timeout-based consent.
+- **Human in the loop:** material turnover requires an identified, timestamped response bound to the SHA-256 hash of the exact controlled proposal and to the initial portfolio, mandate, and mocked market-data snapshot. Approval expires after 15 minutes and cannot be replayed within a supervisor session or after restart when the prior approval appears in the persisted audit log. Lack of valid approval is rejection, not timeout-based consent.
 - **Fail closed:** missing compliance/risk responses, invalid schema, stale inputs, or unresolved breach should block execution.
 - **Rollback:** the initial portfolio is an immutable checkpoint; blocked runs return it unchanged. Real execution would require a separate authorized adapter and compensating-trade playbook.
-- **Auditability:** every message includes identity, timestamp, correlation ID, severity, evidence, and rule version where applicable. JSONL is opened in append mode and persists across runs rather than being truncated at startup.
+- **Auditability:** every message includes identity, timestamp, correlation ID, severity, evidence, and rule version where applicable. JSONL is opened in append mode and persists across runs rather than being truncated at startup. Each record includes the previous record hash and its own SHA-256 record hash; startup verifies the chain before accepting the log as replay-prevention evidence.
 - **Abuse controls:** authenticate agents, authorize tools independently, sanitize evidence, cap messages/rounds, restrict external URLs, and never expose brokerage credentials to reasoning agents.
 - **Governance:** version mandates and prompts, require dual control for policy changes, retain decisions per policy, and periodically test restricted-list freshness.
 
@@ -149,7 +149,7 @@ Deployment uses shadow mode first, then recommendation-only mode. Prompt, model,
 
 Evaluation uses a fixed scenario suite: normal markets, inflation shock, missing data, stale restricted list, concentration breach, contradictory evidence, prompt injection in research, unavailable agent, duplicated message, and approval replay. Compare against (1) a single-agent baseline, (2) deterministic rules only, and (3) human-only committee workflow. Red-team tests attempt veto bypass, evidence spoofing, recipient impersonation, and message floods.
 
-The included tests establish ten prototype invariants spanning restricted-asset removal, risk-breach blocking, rollback without approval, proposal-hash binding, approval freshness and replay prevention, balanced weights, sender/type authorization, recipient routing, malformed-message rejection, and audit persistence. They are illustrative, not sufficient assurance.
+The included tests establish prototype invariants spanning restricted-asset removal, risk-breach blocking, rollback without approval, proposal-hash and input-snapshot binding, approval freshness and replay prevention across restarts, balanced weights, sender/type authorization, recipient routing, malformed-message rejection, unavailable-agent fail-closed behavior, audit persistence, and audit tamper detection. They are illustrative, not sufficient assurance.
 
 ## Interoperability boundaries
 
@@ -165,9 +165,9 @@ MARL could be used offline in a synthetic market to research capital-budget nego
 
 ## Prototype limitations and next steps
 
-All market data, forecasts, and trades are mocked; the agents are deterministic Python classes, not LLM calls. The audit file is durably appended but is not signed, hash-chained, or protected from filesystem administrators. Approval replay detection is process-local. There is no external identity provider, concurrent runner, durable queue, live execution, or production UI.
+All market data, forecasts, and trades are mocked; the agents are deterministic Python classes, not LLM calls. The audit file is durably appended and hash-chained, but it is not externally signed or protected from filesystem administrators. Approval replay detection is backed by the local audit file, not an external consensus store. There is no external identity provider, concurrent runner, durable queue, live execution, or production UI.
 
-Next steps: add a versioned external JSON Schema, frozen input-data hashes, injected data/tool interfaces, cross-process idempotency, richer stress tests, an approval UI backed by strong identity, signed/hash-chained audit storage, and optional LLM adapters behind the same agent contracts. Only after shadow evaluation should a separately permissioned execution service be considered.
+Next steps: add a versioned external JSON Schema, injected data/tool interfaces, stronger cross-process idempotency, richer stress tests, an approval UI backed by strong identity, externally signed audit storage, and optional LLM adapters behind the same agent contracts. Only after shadow evaluation should a separately permissioned execution service be considered.
 
 ## Repository map
 

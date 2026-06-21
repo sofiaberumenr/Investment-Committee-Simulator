@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .models import Mandate, Message, MessageType, Portfolio, Severity, Trade
 
 
@@ -89,7 +91,33 @@ class PortfolioManagerAgent:
     name = "portfolio_manager"
 
     def parse_trades(self, recommendation: Message) -> list[Trade]:
-        return [Trade(**trade) for trade in recommendation.payload["trades"]]
+        raw_trades = recommendation.payload.get("trades")
+        if not isinstance(raw_trades, list) or not raw_trades:
+            raise ValueError("recommendation payload must include a non-empty trades list")
+
+        trades: list[Trade] = []
+        for index, raw_trade in enumerate(raw_trades):
+            if not isinstance(raw_trade, dict):
+                raise ValueError(f"trade {index} must be an object")
+            trades.append(self._parse_trade(raw_trade, index))
+        return trades
+
+    def _parse_trade(self, raw_trade: dict[str, Any], index: int) -> Trade:
+        allowed = {"asset", "delta_weight", "sector"}
+        extra = set(raw_trade) - allowed
+        missing = allowed - set(raw_trade)
+        if missing:
+            raise ValueError(f"trade {index} missing fields: {sorted(missing)}")
+        if extra:
+            raise ValueError(f"trade {index} has unknown fields: {sorted(extra)}")
+        try:
+            return Trade(
+                asset=raw_trade["asset"],
+                delta_weight=raw_trade["delta_weight"],
+                sector=raw_trade["sector"],
+            )
+        except ValueError as exc:
+            raise ValueError(f"trade {index} is invalid: {exc}") from exc
 
     def revise_after_veto(self, trades: list[Trade], veto: Message) -> list[Trade]:
         restricted = set(veto.payload["restricted_assets"])
@@ -98,4 +126,3 @@ class PortfolioManagerAgent:
         if removed:
             revised.append(Trade("CASH", removed, "Cash"))
         return revised
-
